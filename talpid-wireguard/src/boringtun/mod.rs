@@ -90,9 +90,7 @@ pub async fn open_boringtun_tunnel(
         let mut config = tun07::Configuration::default();
         config.raw_fd(fd);
 
-        boringtun_config.on_bind = Some(Box::new(move |socket| {
-            tun.bypass(socket.as_raw_fd()).unwrap()
-        }));
+        boringtun_config.on_bind = Some(Box::new(move |socket| tun.bypass(socket).unwrap()));
 
         let device = tun07::Device::new(&config).unwrap();
         tun07::AsyncDevice::new(device).unwrap()
@@ -299,8 +297,8 @@ pub fn get_tunnel_for_userspace(
             .open_tun()
             .map_err(TunnelError::SetupTunnelDevice)?;
 
-        match nix::unistd::dup(tunnel_device.as_raw_fd()) {
-            Ok(fd) => return Ok((tunnel_device, fd)),
+        match nix::unistd::dup(&tunnel_device) {
+            Ok(fd) => return Ok((tunnel_device, fd.as_raw_fd())),
             #[cfg(not(target_os = "macos"))]
             Err(error @ nix::errno::Errno::EBADFD) => last_error = Some(error),
             Err(error @ nix::errno::Errno::EBADF) => last_error = Some(error),

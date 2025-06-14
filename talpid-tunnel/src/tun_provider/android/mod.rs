@@ -13,7 +13,10 @@ use jnix::{
 };
 use std::{
     net::IpAddr,
-    os::unix::io::{AsRawFd, RawFd},
+    os::{
+        fd::{AsFd, BorrowedFd},
+        unix::io::{AsRawFd, RawFd},
+    },
     sync::Arc,
 };
 use talpid_routing::Route;
@@ -194,22 +197,22 @@ impl AndroidTunProvider {
     }
 
     /// Allow a socket to bypass the tunnel.
-    pub fn bypass(&mut self, socket: RawFd) -> Result<(), Error> {
+    pub fn bypass(&mut self, socket: &impl AsRawFd) -> Result<(), Error> {
         let env = JnixEnv::from(
             self.jvm
                 .attach_current_thread_as_daemon()
                 .map_err(Error::AttachJvmToThread)?,
         );
-        let create_tun_method = env
+        let bypass_method = env
             .get_method_id(&self.class, "bypass", "(I)Z")
             .map_err(|cause| Error::FindMethod("bypass", cause))?;
 
         let result = env
             .call_method_unchecked(
                 self.object.as_obj(),
-                create_tun_method,
+                bypass_method,
                 JavaType::Primitive(Primitive::Boolean),
-                &[JValue::Int(socket)],
+                &[JValue::Int(socket.as_raw_fd())],
             )
             .map_err(|cause| Error::CallMethod("bypass", cause))?;
 
@@ -401,22 +404,22 @@ impl VpnServiceTun {
     }
 
     /// Allow a socket to bypass the tunnel.
-    pub fn bypass(&mut self, socket: RawFd) -> Result<(), Error> {
+    pub fn bypass(&mut self, socket: &impl AsFd) -> Result<(), Error> {
         let env = JnixEnv::from(
             self.jvm
                 .attach_current_thread_as_daemon()
                 .map_err(Error::AttachJvmToThread)?,
         );
-        let create_tun_method = env
+        let bypass_method = env
             .get_method_id(&self.class, "bypass", "(I)Z")
             .map_err(|cause| Error::FindMethod("bypass", cause))?;
 
         let result = env
             .call_method_unchecked(
                 self.object.as_obj(),
-                create_tun_method,
+                bypass_method,
                 JavaType::Primitive(Primitive::Boolean),
-                &[JValue::Int(socket)],
+                &[JValue::Int(socket.as_fd().as_raw_fd())],
             )
             .map_err(|cause| Error::CallMethod("bypass", cause))?;
 
@@ -430,6 +433,16 @@ impl VpnServiceTun {
 impl AsRawFd for VpnServiceTun {
     fn as_raw_fd(&self) -> RawFd {
         self.tunnel
+    }
+}
+
+impl AsFd for VpnServiceTun {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        // TODO: ensure we uphold the safety requirements of BorrowedFd
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            BorrowedFd::borrow_raw(self.as_raw_fd())
+        }
     }
 }
 

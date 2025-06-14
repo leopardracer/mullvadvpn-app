@@ -18,8 +18,6 @@ use std::borrow::Cow;
 #[cfg(daita)]
 use std::ffi::CString;
 #[cfg(unix)]
-use std::os::unix::io::{AsRawFd, RawFd};
-#[cfg(unix)]
 use std::sync::{Arc, Mutex};
 use std::{
     future::Future,
@@ -300,10 +298,10 @@ impl WgGoTunnelState {
             let socket_v6 = self.tunnel_handle.get_socket_v6();
             let mut provider = tun_provider.lock().unwrap();
             provider
-                .bypass(socket_v4)
+                .bypass(&socket_v4)
                 .map_err(super::TunnelError::BypassError)?;
             provider
-                .bypass(socket_v6)
+                .bypass(&socket_v6)
                 .map_err(super::TunnelError::BypassError)?;
         }
 
@@ -447,7 +445,7 @@ impl WgGoTunnel {
         tun_provider: Arc<Mutex<TunProvider>>,
         config: &Config,
         #[cfg(not(target_os = "android"))] routes: impl Iterator<Item = IpNetwork>,
-    ) -> Result<(Tun, RawFd)> {
+    ) -> Result<(Tun, std::os::fd::OwnedFd)> {
         let mut last_error = None;
         let mut tun_provider = tun_provider.lock().unwrap();
 
@@ -486,7 +484,7 @@ impl WgGoTunnel {
                 .open_tun()
                 .map_err(TunnelError::SetupTunnelDevice)?;
 
-            match nix::unistd::dup(tunnel_device.as_raw_fd()) {
+            match nix::unistd::dup(&tunnel_device) {
                 Ok(fd) => return Ok((tunnel_device, fd)),
                 #[cfg(not(target_os = "macos"))]
                 Err(error @ nix::errno::Errno::EBADFD) => last_error = Some(error),
@@ -658,8 +656,8 @@ impl WgGoTunnel {
         let socket_v4 = handle.get_socket_v4();
         let socket_v6 = handle.get_socket_v6();
 
-        tunnel_device.bypass(socket_v4)?;
-        tunnel_device.bypass(socket_v6)?;
+        tunnel_device.bypass(&socket_v4)?;
+        tunnel_device.bypass(&socket_v6)?;
 
         Ok(())
     }
